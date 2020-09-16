@@ -1,0 +1,361 @@
+AWSTemplateFormatVersion : '2010-09-09'
+Description: "NT Stress project with locust, this cloudformation template eploying container to execute stress test based on code: https://aws.amazon.com/solutions/implementations/distributed-load-testing-on-aws/"
+
+Parameters:
+  SourceBucket:
+    Type: String
+    Default: PLEASE CHANGE ME, Use the bucket name where you upload the code
+    Description: bucket name where you uploaded the continer.zip file
+    MinLength: 9
+    MaxLength: 90
+
+  VpcCidrBlock:
+      Type: String
+      Default: 192.168.0.0/16
+      Description: CIDR block of the new VPC where AWS Fargate will be placed
+      AllowedPattern: "(?:^$|(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2}))"
+      ConstraintDescription: "must be a valid IP CIDR range of the form x.x.x.x/x."
+      MinLength: 9
+      MaxLength: 18
+
+  SubnetACidrBlock:
+      Type: String
+      Default: 192.168.0.0/20
+      Description: CIDR block for subnet A of the AWS Fargate VPC
+      AllowedPattern: "(?:^$|(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2}))"
+      ConstraintDescription: "must be a valid IP CIDR range of the form x.x.x.x/x."
+      MinLength: 8
+      MaxLength: 18
+
+  SecurityGroupPort:
+    Type: String
+    Default: 8089
+    Description: Security group to open 
+    MinLength: 2
+    MaxLength: 4
+
+Resources:
+
+## S3 resources
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+
+## Roles and Permissions
+  CloudWatchLogsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub ${AWS::StackName}-cloudwatch-policy
+      Roles:
+        - !Ref EcsTaskExecutionRole
+        - !Ref ContainerCodeBuildRole
+        - !Ref ContainerCodePipelineRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource:
+              !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/*
+
+  EcsTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: "sts:AssumeRole"
+            Principal:
+              Service: "ecs-tasks.amazonaws.com"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+
+  ContainerCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: codebuild.amazonaws.com
+      Policies:
+        -
+          PolicyName: !Sub ${AWS::StackName}-code-build-policy
+          PolicyDocument:
+            Statement:
+              -
+                Effect: Allow
+                Action:
+                    - ecr:DescribeImages
+                    - ecr:PutImage
+                    - ecr:UploadLayerPart
+                    - ecr:CompleteLayerUpload
+                    - ecr:InitiateLayerUpload
+                    - ecr:GetDownloadUrlForLayer
+                    - ecr:ListImages
+                    - ecr:BatchCheckLayerAvailability
+                    - ecr:GetRepositoryPolicy
+                Resource:
+                    - !Sub ${EcrRepository.Arn}
+              -
+                Effect: Allow
+                Action:
+                    - ecr:GetAuthorizationToken
+                Resource: "*"
+              -
+                Effect: Allow
+                Action:
+                    - s3:GetObject
+                    - s3:GetObjectVersion
+                    - s3:GetBucketVersioning
+                    - s3:GetObjectVersion
+                    - s3:ListBucketVersions
+                    - s3:PutObject
+                Resource:
+                    - !Sub ${ArtifactBucket.Arn}
+                    - !Sub ${ArtifactBucket.Arn}/*
+                    - !Join ["", ["arn:aws:s3:::", Ref: "SourceBucket", "/*"]]
+                    - !Join ["", ["arn:aws:s3:::", Ref: "SourceBucket", ""]]
+
+  ContainerCodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        -
+          PolicyName: !Sub ${AWS::StackName}-code-pipeline-policy
+          PolicyDocument:
+            Statement:
+                -
+                  Effect: Allow
+                  Action:
+                      - s3:GetObject
+                      - s3:GetObjectVersion
+                      - s3:GetBucketVersioning
+                      - s3:GetObjectVersion
+                      - s3:ListBucketVersions
+                      - s3:PutObject
+                  Resource:
+                      - !Sub ${ArtifactBucket.Arn}
+                      - !Sub ${ArtifactBucket.Arn}/*
+                      - !Join ["", ["arn:aws:s3:::", Ref: "SourceBucket", "/*"]]
+                      - !Join ["", ["arn:aws:s3:::", Ref: "SourceBucket", ""]]
+                -
+                    Effect: Allow
+                    Action:
+                        - codebuild:StartBuild
+                        - codebuild:BatchGetBuilds
+                    Resource:
+                        - !Sub ${ContainerCodeBuild.Arn}
+
+## Fargate VPC
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidrBlock
+      InstanceTenancy: default
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref SubnetACidrBlock
+      AvailabilityZone:
+        !Select
+            - 0
+            - !GetAZs
+      VpcId: !Ref Vpc
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties: {}
+
+  MainRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  RouteToInternet:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      RouteTableId: !Ref MainRouteTable
+      GatewayId: !Ref InternetGateway
+
+  RouteTableAssociationA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref MainRouteTable
+      SubnetId: !Ref PublicSubnetA
+
+## ECS Resources
+  EcrRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub ${AWS::StackName}
+
+  EcsCluster:
+      Type: AWS::ECS::Cluster
+      Properties:
+        ClusterName: !Sub ${AWS::StackName}
+
+  EcsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${AWS::StackName}
+      GroupDescription: ECS Tasks Security Group
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+          FromPort: !Ref SecurityGroupPort
+          ToPort: !Ref SecurityGroupPort
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+
+  EcsTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Cpu: '1024'
+      Family: !Sub ${AWS::StackName}
+      ExecutionRoleArn: !GetAtt EcsTaskExecutionRole.Arn
+      Memory: '4096'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      TaskRoleArn: !GetAtt EcsTaskExecutionRole.Arn
+      ContainerDefinitions:
+        -
+          Ulimits: 
+            - 
+              Name: nofile
+              HardLimit: 65535
+              SoftLimit: 65535
+          Essential: true
+          Name: !Sub ${AWS::StackName}-nt-stress
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${EcrRepository}:latest
+          Memory: 4096
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref EcsCloudWatchLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: "nt-stress"
+
+  EcsCloudWatchLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 5
+
+## Container Pipeline and Codebuild
+  ContainerCodeBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Description: Builds distributed load testing suite
+      TimeoutInMinutes: 20
+      ServiceRole: !GetAtt ContainerCodeBuildRole.Arn
+      EncryptionKey: !Sub arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: "BUILD_GENERAL1_SMALL"
+        Image: "aws/codebuild/amazonlinux2-x86_64-standard:2.0"
+        PrivilegedMode: true
+        EnvironmentVariables:
+          -
+            Name: REPOSITORY
+            Value: !Sub ${EcrRepository}
+          -
+            Name: REPOSITORY_URI
+            Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${EcrRepository}
+
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: !Sub |
+          version: 0.2
+          phases:
+              pre_build:
+                commands:
+                  - echo $REPOSITORY
+                  - echo $REPOSITORY_URI
+                  - $(aws ecr get-login --region ${AWS::Region} --no-include-email)
+              build:
+                commands:
+                  - docker build -t $REPOSITORY:latest .
+                  - docker tag $REPOSITORY:latest $REPOSITORY_URI:latest
+              post_build:
+                commands:
+                  - docker push $REPOSITORY_URI:latest
+
+  ContainerCodePipeline:
+    DependsOn: [ CloudWatchLogsPolicy]
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      RoleArn: !GetAtt ContainerCodePipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+      Stages:
+        -
+          Name: Source
+          Actions:
+            -
+              Name: Source
+              ActionTypeId:
+                Category: Source
+                Provider: S3
+                Owner: AWS
+                Version: '1'
+              OutputArtifacts:
+                - Name: SourceOutput
+              Configuration:
+                S3Bucket: !Ref SourceBucket
+                S3ObjectKey: container.zip
+        -
+          Name: Build
+          Actions:
+            -
+              Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: '1'
+                Provider: CodeBuild
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: BuildOutput
+              Configuration:
+                ProjectName:
+                  !Ref ContainerCodeBuild

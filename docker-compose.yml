@@ -1,0 +1,11 @@
+version: '3.7'
+
+services:
+  delivery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nt_stress
+    container_name: nt_stress
+    ports:
+      - 8089:8089
