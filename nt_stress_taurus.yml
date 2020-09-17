@@ -1,0 +1,29 @@
+---
+    # Taurus documentation https://gettaurus.org/docs/ConfigSyntax/
+    execution:
+    - executor: locust
+      concurrency: 50
+      ramp-up: 0
+      hold-for: 1m
+      throughput: 10
+      scenario: nt_stress
+    reporting:
+    - module: final-stats
+      summary: true
+      percentiles: true
+      summary-labels: false
+      failed-labels: false
+      test-duration: true
+      dump-csv: report.csv
+    # Uncomment the following lines if you want to upload your report into your Blazemeter account
+    # - module: blazemeter
+    #   token: YOUR_BLAZMETER_TOKEN
+    #   report-name: My report name
+    #   test: netman_uy on Twitter
+    #   project: netman_taurus
+    #   upload-artifacts: true
+
+    scenarios:
+      nt_stress:
+        default-address: https://www.google.com
+        script: bzt-configs/locustfile.py

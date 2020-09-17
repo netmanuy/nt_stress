@@ -5,6 +5,7 @@ LABEL maintainer="Sebastian Delgado (Twitter @netman_uy)"
 WORKDIR /data/nt_stress
 
 # Copying code into container
+COPY nt_stress_taurus.yml /data/nt_stress/
 COPY load-test.sh /data/nt_stress/
 COPY bzt-configs/unique_codes.csv /data/nt_stress/bzt-configs/unique_codes.csv
 COPY bzt-configs/locustfile.py /data/nt_stress/bzt-configs/locustfile.py

@@ -1,10 +1,15 @@
-# Set a uuid for the resultsxml file name in S3
+# Set a uuid in the future we can use this as random filename for reports
 UUID=$(cat /proc/sys/kernel/random/uuid)
 
-#echo "S3_BUCKET:: ${S3_BUCKET}"
-#echo "TEST_ID:: ${TEST_ID}"
-echo "NT stress version 0.1 with Locust"
+# Simple debug message
+echo "NT stress version 0.2 with Taurus & Locust"
 echo "UUID ${UUID}"
 
+# Debug message
 echo "Running test"
+
+# Running the test using Locust
 locust -f bzt-configs/locustfile.py
+
+# Running the test using Taurus
+#bzt nt_stress_taurus.yml -o modules.console.disable=true

@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion : '2010-09-09'
-Description: "NT Stress project with locust, this cloudformation template eploying container to execute stress test based on code: https://aws.amazon.com/solutions/implementations/distributed-load-testing-on-aws/"
+Description: "NT Stress project with Taurus and Locust, this cloudformation template eploying container to execute stress test based on code: https://aws.amazon.com/solutions/implementations/distributed-load-testing-on-aws"
 
 Parameters:
   SourceBucket:

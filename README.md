@@ -18,6 +18,16 @@ docker-compose up
 ```
 
 To launch your test just open a browser and type ***http://localhost:8089***
+If you want to run the tests using Taurus instead of Locust you need to modify ***load-test.sh*** comment line 10 and uncomment line 14
+
+
+```
+# Running the test using Locust
+#locust -f bzt-configs/locustfile.py
+
+# Running the test using Taurus
+bzt nt_stress_taurus.yml -o modules.console.disable=true
+```
 
 ## Build and Deployment
 
@@ -49,5 +59,5 @@ Once the stack is deployed and the Codepipeline resource complete the build, you
 aws ecs run-task --cluster STACK_NAME --task-definition  STACK_NAME:1 --count 1 --network-configuration '{"awsvpcConfiguration":{"subnets":["SUBNET_ID"],"securityGroups":["SECURITY_GROUP_ID"],"assignPublicIp":"ENABLED"}}' --launch-type FARGATE
 ```
 
-### 5. Load Locust admin
+### 5. Load Locust admin, this step is only needed if you chose to use Locust instead of Taurus
 Just open a browser and type ***http://task_ip:8089***
