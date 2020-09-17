@@ -11,7 +11,7 @@ class NTstressTestCase(HttpUser):
     def test_case(self):
 
         # Failure URL. if we detect a redirect to this URL we will consider this as a failure
-        failure_url = "http://wpc.79a8.edgecastcdn.net/8079A8/origin/images/liveclicker/test_probe.gif"
+        failure_url = "https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png"
 
         # Characters to pickup for random string
         characters_string = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
