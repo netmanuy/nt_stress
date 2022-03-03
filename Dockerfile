@@ -13,6 +13,9 @@ COPY bzt-configs/locustfile.py /data/nt_stress/bzt-configs/locustfile.py
 # Add permission
 RUN chmod 755 /data/nt_stress/load-test.sh
 
+# Install locust
+RUN pip3 install locust
+
 # Expose port
 EXPOSE 8089
 
